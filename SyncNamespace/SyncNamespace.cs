@@ -109,8 +109,8 @@ namespace SyncNamespace
 
                     var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(filePath));
                     var ns = tree.GetRoot().DescendantNodes().OfType<NamespaceDeclarationSyntax>().First();
-                    tree.GetRoot().ReplaceNode(ns, SyntaxFactory.NamespaceDeclaration(SyntaxFactory.IdentifierName(nameSpace)));
-                    File.WriteAllText(filePath, tree.GetCompilationUnitRoot().ToFullString());
+                    
+                    File.WriteAllText(filePath, tree.GetCompilationUnitRoot().ReplaceNode(ns.Name, SyntaxFactory.IdentifierName(nameSpace)).ToFullString());
                 }
             }
         }
