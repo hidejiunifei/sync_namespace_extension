@@ -48,6 +48,7 @@ namespace SyncNamespace
             // Do any initialization that requires the UI thread after switching to the UI thread.
             await this.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
             await SyncNamespace.InitializeAsync(this);
+            await ListNotSynced.InitializeAsync(this);
         }
 
         #endregion

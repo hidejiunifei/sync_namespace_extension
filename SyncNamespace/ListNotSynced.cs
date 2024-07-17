@@ -1,32 +1,35 @@
 ﻿using EnvDTE;
 using EnvDTE80;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.VisualStudio.Shell;
-using Microsoft.VisualStudio.Text.Editor;
+using Microsoft.VisualStudio.Shell.Interop;
 using System;
 using System.ComponentModel.Design;
-using System.IO;
-using System.Linq;
+using System.Globalization;
+using System.Threading;
+using System.Threading.Tasks;
 using Task = System.Threading.Tasks.Task;
+using Microsoft.CodeAnalysis;
+using System.Linq;
+using System.IO;
 
 namespace SyncNamespace
 {
     /// <summary>
     /// Command handler
     /// </summary>
-    internal sealed class SyncNamespace
+    internal sealed class ListNotSynced
     {
         /// <summary>
         /// Command ID.
         /// </summary>
-        public const int CommandId = 0x0100;
+        public const int CommandId = 256;
 
         /// <summary>
         /// Command menu group (command set GUID).
         /// </summary>
-        public static readonly Guid CommandSet = new Guid("5193e04c-6ef9-441a-8a4f-94c25ff77f69");
+        public static readonly Guid CommandSet = new Guid("e7155a78-fe26-4a11-afb9-151abd8fdaaf");
 
         /// <summary>
         /// VS Package that provides this command, not null.
@@ -34,12 +37,12 @@ namespace SyncNamespace
         private readonly AsyncPackage package;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="SyncNamespace"/> class.
+        /// Initializes a new instance of the <see cref="ListNotSynced"/> class.
         /// Adds our command handlers for menu (commands must exist in the command table file)
         /// </summary>
         /// <param name="package">Owner package, not null.</param>
         /// <param name="commandService">Command service to add command to, not null.</param>
-        private SyncNamespace(AsyncPackage package, OleMenuCommandService commandService)
+        private ListNotSynced(AsyncPackage package, OleMenuCommandService commandService)
         {
             this.package = package ?? throw new ArgumentNullException(nameof(package));
             commandService = commandService ?? throw new ArgumentNullException(nameof(commandService));
@@ -52,7 +55,7 @@ namespace SyncNamespace
         /// <summary>
         /// Gets the instance of the command.
         /// </summary>
-        public static SyncNamespace Instance
+        public static ListNotSynced Instance
         {
             get;
             private set;
@@ -75,12 +78,12 @@ namespace SyncNamespace
         /// <param name="package">Owner package, not null.</param>
         public static async Task InitializeAsync(AsyncPackage package)
         {
-            // Switch to the main thread - the call to AddCommand in SyncNamespace's constructor requires
+            // Switch to the main thread - the call to AddCommand in ListNotSynced's constructor requires
             // the UI thread.
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(package.DisposalToken);
 
             OleMenuCommandService commandService = await package.GetServiceAsync(typeof(IMenuCommandService)) as OleMenuCommandService;
-            Instance = new SyncNamespace(package, commandService);
+            Instance = new ListNotSynced(package, commandService);
         }
 
         /// <summary>
@@ -102,19 +105,28 @@ namespace SyncNamespace
             {
                 foreach (UIHierarchyItem selItem in selectedItems)
                 {
-                    if (selItem.Object is ProjectItem projectItem)
+                    if (selItem.Object is Project project)
                     {
-                        string filePath = projectItem.Properties.Item("FullPath").Value.ToString();
+                        string filePath = project.FileName;
                         string fileShortPath = filePath.Substring(0, filePath.LastIndexOf(@"\"));
-                        string projectPath = projectItem.ContainingProject.Name;
-                        string nameSpace = $"{projectPath}{fileShortPath.Substring(fileShortPath.IndexOf(projectPath) + projectPath.Length)}"
+                        string projectPath = project.Name;
+                        var sw = File.AppendText($"{fileShortPath}\\different_namespaces.txt");
+
+                        foreach (var file in Directory.GetFiles(fileShortPath, "*.cs", SearchOption.AllDirectories))
+                        {
+                            filePath = file;
+                            fileShortPath = filePath.Substring(0, filePath.LastIndexOf(@"\"));
+                            string nameSpace = $"{projectPath}{fileShortPath.Substring(fileShortPath.IndexOf(projectPath) + projectPath.Length)}"
                             .Replace(@"\", ".");
 
-                        var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(filePath));
-                        var ns = tree.GetRoot().DescendantNodes().OfType<NamespaceDeclarationSyntax>().First();
+                            var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(file));
+                            var ns = tree.GetRoot().DescendantNodes().OfType<NamespaceDeclarationSyntax>().FirstOrDefault();
 
-                        File.WriteAllText(filePath, tree.GetCompilationUnitRoot().ReplaceNode(ns.Name,
-                            SyntaxFactory.IdentifierName(nameSpace).WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed)).ToFullString());
+                            if (ns != null && ns.Name.ToString() != nameSpace)
+                                sw.WriteLine($"{ns.Name.ToString()} {file}");
+                        }
+
+                        sw.Close();
                     }
                 }
             }
